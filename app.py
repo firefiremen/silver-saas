@@ -156,9 +156,10 @@ def subscribe():
 def success():
     return render_template("success.html")
 
-# ── 启动 ──────────────────────────────────────────────────
+# ── 启动（gunicorn 和直接运行都会执行） ────────────────────
+init_db()
+t = threading.Thread(target=monitor_loop, daemon=True)
+t.start()
+
 if __name__ == "__main__":
-    init_db()
-    t = threading.Thread(target=monitor_loop, daemon=True)
-    t.start()
     app.run(debug=False, port=5000)
