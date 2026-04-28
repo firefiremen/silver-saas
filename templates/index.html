@@ -3,35 +3,146 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>银价提醒服务</title>
+    <title>贵金属价格提醒{% if is_beta %} · Beta{% endif %}</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, sans-serif; background: #f5f5f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-        .card { background: white; border-radius: 12px; padding: 40px; width: 100%; max-width: 420px; box-shadow: 0 2px 16px rgba(0,0,0,0.1); }
-        h1 { font-size: 22px; color: #333; margin-bottom: 6px; }
-        .sub { color: #888; font-size: 14px; margin-bottom: 28px; }
-        label { display: block; font-size: 13px; color: #555; margin-bottom: 6px; margin-top: 16px; }
-        input { width: 100%; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 15px; outline: none; }
+        body { font-family: -apple-system, sans-serif; background: #f5f5f5; display: flex; justify-content: center; align-items: flex-start; min-height: 100vh; padding: 32px 16px; }
+        .card { background: white; border-radius: 12px; padding: 32px; width: 100%; max-width: 440px; box-shadow: 0 2px 16px rgba(0,0,0,0.1); position: relative; }
+        .badge { position: absolute; top: 16px; right: 16px; background: #f59e0b; color: white; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 99px; letter-spacing: 0.5px; }
+
+        /* ── 实时行情 ── */
+        .prices-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+        .price-box { flex: 1; background: #f8f8f8; border-radius: 8px; padding: 12px 10px; text-align: center; }
+        .price-box .label { font-size: 11px; color: #999; margin-bottom: 5px; letter-spacing: 0.3px; }
+        .price-box .val { font-size: 21px; font-weight: 700; color: #1a1a1a; line-height: 1; }
+        .price-box .range { font-size: 11px; color: #bbb; margin-top: 4px; }
+        .ratio-col { text-align: center; min-width: 52px; flex-shrink: 0; }
+        .ratio-col .rl { font-size: 10px; color: #bbb; }
+        .ratio-col .rv { font-size: 16px; font-weight: 600; color: #666; }
+        .update-row { font-size: 11px; color: #ccc; text-align: right; margin-bottom: 16px; }
+        .sep { border: none; border-top: 1px solid #efefef; margin-bottom: 20px; }
+
+        /* ── 订阅表单 ── */
+        h1 { font-size: 20px; color: #333; margin-bottom: 5px; }
+        .sub { color: #888; font-size: 14px; margin-bottom: 20px; }
+        label { display: block; font-size: 13px; color: #555; margin-bottom: 6px; margin-top: 14px; }
+        input[type=email], input[type=number] { width: 100%; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 15px; outline: none; }
         input:focus { border-color: #666; }
-        button { width: 100%; margin-top: 24px; padding: 12px; background: #222; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; }
+        .asset-toggle { display: flex; gap: 8px; margin-top: 4px; }
+        .asset-toggle input[type=radio] { display: none; }
+        .asset-toggle label { flex: 1; text-align: center; padding: 10px; border: 1px solid #ddd; border-radius: 8px; cursor: pointer; font-size: 14px; color: #555; margin: 0; transition: all 0.15s; }
+        .asset-toggle input[type=radio]:checked + label { background: #222; color: white; border-color: #222; }
+        button { width: 100%; margin-top: 22px; padding: 12px; background: #222; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; }
         button:hover { background: #444; }
-        .footer { margin-top: 20px; text-align: center; font-size: 13px; color: #aaa; }
+        .footer { margin-top: 18px; text-align: center; font-size: 13px; color: #aaa; }
+        .version-tag { margin-top: 6px; text-align: center; font-size: 11px; color: #ddd; }
     </style>
 </head>
 <body>
     <div class="card">
-        <h1>银价提醒服务</h1>
+        {% if is_beta %}<span class="badge">BETA</span>{% endif %}
+
+        <!-- 实时行情 -->
+        <div class="prices-bar">
+            <div class="price-box">
+                <div class="label">黄金 XAU · USD/oz</div>
+                <div class="val" id="xau-price">—</div>
+                <div class="range" id="xau-range">高 — / 低 —</div>
+            </div>
+            <div class="ratio-col">
+                <div class="rl">金银比</div>
+                <div class="rv" id="ratio">—</div>
+            </div>
+            <div class="price-box">
+                <div class="label">白银 XAG · USD/oz</div>
+                <div class="val" id="xag-price">—</div>
+                <div class="range" id="xag-range">高 — / 低 —</div>
+            </div>
+        </div>
+        <div class="update-row" id="update-row">加载中…</div>
+        <hr class="sep">
+
+        <!-- 订阅表单 -->
+        <h1>贵金属价格提醒</h1>
         <p class="sub">设置目标价格，触发时自动发邮件通知。当前已有 {{ count }} 人订阅。</p>
         <form action="/subscribe" method="POST">
+            <input type="hidden" name="version" value="{{ version }}">
+
+            <label>选择标的</label>
+            <div class="asset-toggle">
+                <input type="radio" name="asset" id="xag" value="XAG" checked>
+                <label for="xag">白银 XAG</label>
+                <input type="radio" name="asset" id="xau" value="XAU">
+                <label for="xau">黄金 XAU</label>
+            </div>
+
             <label>邮箱地址</label>
             <input type="email" name="email" placeholder="your@email.com" required>
-            <label>上方目标价（USD）— 涨到此价提醒</label>
-            <input type="number" name="high" placeholder="例如：82.0" step="0.1" required>
-            <label>下方目标价（USD）— 跌到此价提醒</label>
-            <input type="number" name="low" placeholder="例如：78.0" step="0.1" required>
+
+            <label>上方目标价（USD/盎司）— 涨到此价提醒</label>
+            <input type="number" name="high" id="high" placeholder="例如：76.0" step="0.1" required>
+
+            <label>下方目标价（USD/盎司）— 跌到此价提醒</label>
+            <input type="number" name="low" id="low" placeholder="例如：70.0" step="0.1" required>
+
             <button type="submit">订阅提醒</button>
         </form>
-        <p class="footer">银价数据每60秒更新一次</p>
+        <p class="footer">价格数据来自同花顺，实时更新</p>
+        <p class="version-tag">{{ version }}</p>
     </div>
+
+    <script>
+        const hints = {
+            XAG: { high: "例如：76.0", low: "例如：70.0" },
+            XAU: { high: "例如：4800", low: "例如：4400" }
+        };
+
+        document.querySelectorAll('input[name=asset]').forEach(r => {
+            r.addEventListener('change', () => {
+                document.getElementById('high').placeholder = hints[r.value].high;
+                document.getElementById('low').placeholder  = hints[r.value].low;
+            });
+        });
+
+        const fmt = (v, dec) => v != null ? Number(v).toFixed(dec) : '—';
+
+        async function refreshPrices() {
+            try {
+                const r = await fetch('/api/prices');
+                const d = await r.json();
+
+                const xau = d.XAU || {}, xag = d.XAG || {};
+
+                document.getElementById('xau-price').textContent = fmt(xau.price, 2);
+                document.getElementById('xau-range').textContent =
+                    (xau.high != null) ? `高 ${fmt(xau.high, 2)} / 低 ${fmt(xau.low, 2)}` : '高 — / 低 —';
+
+                document.getElementById('xag-price').textContent = fmt(xag.price, 3);
+                document.getElementById('xag-range').textContent =
+                    (xag.high != null) ? `高 ${fmt(xag.high, 3)} / 低 ${fmt(xag.low, 3)}` : '高 — / 低 —';
+
+                document.getElementById('ratio').textContent = fmt(d.ratio, 1);
+
+                const t = d.updated_at ? d.updated_at.slice(11, 16) : '—';
+                const src = d.source || '';
+                document.getElementById('update-row').textContent = `更新于 ${t}（${src}）`;
+
+                // 动态更新占位符
+                if (xag.price) {
+                    hints.XAG.high = `例如：${(xag.price * 1.03).toFixed(1)}`;
+                    hints.XAG.low  = `例如：${(xag.price * 0.97).toFixed(1)}`;
+                }
+                if (xau.price) {
+                    hints.XAU.high = `例如：${Math.round(xau.price * 1.03)}`;
+                    hints.XAU.low  = `例如：${Math.round(xau.price * 0.97)}`;
+                }
+            } catch(e) {
+                document.getElementById('update-row').textContent = '价格获取失败，稍后重试';
+            }
+        }
+
+        refreshPrices();
+        setInterval(refreshPrices, 1000);
+    </script>
 </body>
 </html>
