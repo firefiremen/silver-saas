@@ -207,7 +207,7 @@ def monitor_loop():
         except Exception as e:
             print(f"[监控] 出错：{e}")
 
-        time.sleep(1)
+        time.sleep(5)
 
 # ── 网页路由 ──────────────────────────────────────────────
 @app.route("/")
