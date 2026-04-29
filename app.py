@@ -162,6 +162,30 @@ def send_email(to, subject, body):
         print(f"[邮件] 发送失败：{e}")
 
 # ── 后台监控线程 ──────────────────────────────────────────
+def _calc_sleep(cache):
+    """
+    根据所有订阅者的价格距目标的远近决定下次轮询间隔。
+    离得远 → 慢（90s），靠近 → 加速（最快 10s）。
+    没有订阅者时休眠 120s。
+    """
+    try:
+        with sqlite3.connect(DB) as conn:
+            rows = conn.execute("SELECT asset, high, low FROM subscribers").fetchall()
+        if not rows:
+            return 120
+        min_rel_gap = float("inf")
+        for asset, high, low in rows:
+            price = cache.get(asset, {}).get("price")
+            if price and price > 0:
+                gap = min(abs(price - high), abs(price - low))
+                min_rel_gap = min(min_rel_gap, gap / price)
+        if min_rel_gap < 0.003:   return 10   # 0.3% 以内：10s 高频确认
+        elif min_rel_gap < 0.008: return 30   # 0.8% 以内：30s 警戒
+        elif min_rel_gap < 0.02:  return 60   # 2%  以内：60s 关注
+        else:                     return 90   # 平静期：90s
+    except Exception:
+        return 60
+
 def monitor_loop():
     print("[监控] 后台线程启动")
     while True:
@@ -204,10 +228,14 @@ def monitor_loop():
                     if sent_low and price > low + buffer:
                         conn.execute("UPDATE subscribers SET sent_low=0 WHERE id=?", (sid,))
 
+            sleep_sec = _calc_sleep(cache)
+            print(f"[监控] 下次检查间隔：{sleep_sec}s")
+
         except Exception as e:
             print(f"[监控] 出错：{e}")
+            sleep_sec = 60
 
-        time.sleep(5)
+        time.sleep(sleep_sec)
 
 # ── 网页路由 ──────────────────────────────────────────────
 @app.route("/")
